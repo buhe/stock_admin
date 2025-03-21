@@ -1,0 +1,57 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 24px;
+  color: #1677ff;
+}
+
+.summary-card,
+.form-card,
+.table-card {
+  margin-bottom: 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card .ant-statistic {
+  text-align: center;
+}
+
+.form-card .ant-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.form-card .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.table-card .ant-table-wrapper {
+  overflow-x: auto;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .form-card .ant-form {
+    flex-direction: column;
+  }
+  
+  .form-card .ant-form-item {
+    margin-right: 0;
+    width: 100%;
+  }
+  
+  .summary-card .ant-row {
+    flex-direction: column;
+  }
+  
+  .summary-card .ant-col {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+}
