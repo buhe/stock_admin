@@ -39,8 +39,8 @@ function App() {
         name: stock.name,
         symbol: stock.symbol,
         group: i + 1,
-        buyPrice: stock.costPrice * (1 - Math.pow(buyStrategyPercent/100, i + 1)),
-        sellPrice: stock.costPrice * (1 + Math.pow(sellStrategyPercent/100, i + 1)),
+        buyPrice: stock.costPrice * Math.pow(1 - buyStrategyPercent/100, i + 1),
+        sellPrice: stock.costPrice * Math.pow(1 + sellStrategyPercent/100, i + 1),
         costPrice: stock.costPrice
       }));
     });
