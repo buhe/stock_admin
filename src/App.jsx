@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Form, Input, Button, InputNumber, Card, Statistic, Row, Col, message, Modal, Space } from 'antd'
+import { Table, Form, Input, Button, InputNumber, Card, Statistic, Row, Col, message, Modal, Space, Select } from 'antd'
 import { PlusOutlined, ShoppingOutlined, DeleteOutlined, HistoryOutlined } from '@ant-design/icons'
 import './App.css'
 
@@ -30,10 +30,14 @@ function App() {
   const [addPurchaseModalVisible, setAddPurchaseModalVisible] = useState(false);
   const [selectedStock, setSelectedStock] = useState(null);
   const [addPurchaseForm] = Form.useForm();
+  const [selectedStockForStrategy, setSelectedStockForStrategy] = useState(null);
 
   // 策略计算函数
   const calculateStrategy = () => {
-    const results = stocks.flatMap(stock => {
+    const filteredStocks = selectedStockForStrategy 
+      ? stocks.filter(stock => stock.symbol === selectedStockForStrategy)
+      : stocks;
+    const results = filteredStocks.flatMap(stock => {
       return Array.from({ length: groupsNumber }, (_, i) => ({
         key: `${stock.key}-${i + 1}`,
         name: stock.name,
@@ -431,6 +435,20 @@ function App() {
       {/* 量化策略模块 */}
       <Card className="strategy-card" title="量化策略">
         <Form layout="inline">
+          <Form.Item label="选择股票" style={{ minWidth: 200 }}>
+            <Select
+              allowClear
+              placeholder="全部股票"
+              value={selectedStockForStrategy}
+              onChange={setSelectedStockForStrategy}
+              options={[
+                ...stocks.map(stock => ({
+                  value: stock.symbol,
+                  label: `${stock.symbol} (${stock.name})`
+                }))
+              ]}
+            />
+          </Form.Item>
           <Form.Item label="买入策略 (%) ">
             <InputNumber
               min={1}
