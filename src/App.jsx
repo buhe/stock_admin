@@ -464,6 +464,11 @@ function App() {
         dataSource={strategyResults}
         columns={[
           { title: '股票名称', dataIndex: 'name' },
+          {
+            title: '成本基准',
+            dataIndex: 'costPrice',
+            render: value => `$${value.toFixed(2)}`
+          },
           { title: '组别', dataIndex: 'group' },
           { 
             title: '买入价格', 
@@ -473,11 +478,6 @@ function App() {
           {
             title: '卖出价格',
             dataIndex: 'sellPrice',
-            render: value => `$${value.toFixed(2)}`
-          },
-          {
-            title: '成本基准',
-            dataIndex: 'costPrice',
             render: value => `$${value.toFixed(2)}`
           }
         ]}
