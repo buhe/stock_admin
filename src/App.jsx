@@ -4,6 +4,10 @@ import { PlusOutlined, ShoppingOutlined, DeleteOutlined, HistoryOutlined } from 
 import './App.css'
 
 function App() {
+  const [buyStrategyPercent, setBuyStrategyPercent] = useState(5);
+  const [sellStrategyPercent, setSellStrategyPercent] = useState(5);
+  const [groupsNumber, setGroupsNumber] = useState(3);
+  const [strategyResults, setStrategyResults] = useState([]);
   const [form] = Form.useForm();
   const [sellForm] = Form.useForm();
   const [initialCapital, setInitialCapital] = useState(() => {
@@ -26,6 +30,22 @@ function App() {
   const [addPurchaseModalVisible, setAddPurchaseModalVisible] = useState(false);
   const [selectedStock, setSelectedStock] = useState(null);
   const [addPurchaseForm] = Form.useForm();
+
+  // 策略计算函数
+  const calculateStrategy = () => {
+    const results = stocks.flatMap(stock => {
+      return Array.from({ length: groupsNumber }, (_, i) => ({
+        key: `${stock.key}-${i + 1}`,
+        name: stock.name,
+        symbol: stock.symbol,
+        group: i + 1,
+        buyPrice: stock.costPrice * (1 - Math.pow(buyStrategyPercent/100, i + 1)),
+        sellPrice: stock.costPrice * (1 + Math.pow(sellStrategyPercent/100, i + 1)),
+        costPrice: stock.costPrice
+      }));
+    });
+    setStrategyResults(results);
+  };
   
   // 计算已用资金和剩余资金
   const usedCapital = stocks.reduce((sum, stock) => sum + (stock.quantity * stock.costPrice), 0);
@@ -334,6 +354,8 @@ function App() {
           </Col>
         </Row>
       </Card>
+
+
       
       {/* 添加股票表单 */}
       <Card title="新增股票" className="form-card">
@@ -388,6 +410,8 @@ function App() {
           </Form.Item>
         </Form>
       </Card>
+
+
       
       {/* 股票列表 */}
       <Card 
@@ -401,6 +425,64 @@ function App() {
           locale={{ emptyText: '暂无股票，请添加股票' }}
         />
       </Card>
+
+
+
+      {/* 量化策略模块 */}
+      <Card className="strategy-card" title="量化策略">
+        <Form layout="inline">
+          <Form.Item label="买入策略 (%) ">
+            <InputNumber
+              min={1}
+              max={50}
+              value={buyStrategyPercent}
+              onChange={setBuyStrategyPercent}
+            />
+          </Form.Item>
+          <Form.Item label="卖出策略 (%) ">
+            <InputNumber
+              min={1}
+              max={50}
+              value={sellStrategyPercent}
+              onChange={setSellStrategyPercent}
+            />
+          </Form.Item>
+          <Form.Item label="计算组数">
+            <InputNumber
+              min={1}
+              max={10}
+              value={groupsNumber}
+              onChange={setGroupsNumber}
+            />
+          </Form.Item>
+          <Button type="primary" onClick={calculateStrategy}>计算</Button>
+        </Form>
+      </Card>
+
+      {/* 策略结果表格 */}
+      <Table
+        dataSource={strategyResults}
+        columns={[
+          { title: '股票名称', dataIndex: 'name' },
+          { title: '组别', dataIndex: 'group' },
+          { 
+            title: '买入价格', 
+            dataIndex: 'buyPrice',
+            render: value => `$${value.toFixed(2)}`
+          },
+          {
+            title: '卖出价格',
+            dataIndex: 'sellPrice',
+            render: value => `$${value.toFixed(2)}`
+          },
+          {
+            title: '成本基准',
+            dataIndex: 'costPrice',
+            render: value => `$${value.toFixed(2)}`
+          }
+        ]}
+        pagination={false}
+      />
 
       {/* 操作记录列表 */}
       <Card 
@@ -419,6 +501,8 @@ function App() {
           locale={{ emptyText: '暂无操作记录' }}
         />
       </Card>
+
+
 
       {/* 卖出股票对话框 */}
       <Modal
@@ -494,6 +578,11 @@ function App() {
           </Form.Item>
         </Form>
       </Modal>
+      
+
+
+
+      
     </div>
   )
 }
