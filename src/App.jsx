@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Table, Form, Input, Button, InputNumber, Card, Statistic, Row, Col, message, Modal, Space, Select } from 'antd'
-import { PlusOutlined, ShoppingOutlined, DeleteOutlined, HistoryOutlined } from '@ant-design/icons'
+import { Table, Form, Input, Button, InputNumber, Card, Statistic, Row, Col, message, Modal, Space, Select, List } from 'antd'
+import { PlusOutlined, ShoppingOutlined, DeleteOutlined, HistoryOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import './App.css'
 
 function App() {
@@ -18,11 +18,69 @@ function App() {
     const savedStocks = localStorage.getItem('stocks');
     return savedStocks ? JSON.parse(savedStocks) : [];
   });
+  // 判断日期是否在半年内的函数
+  const isWithinSixMonths = (dateString) => {
+    const recordDate = new Date(dateString);
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    return recordDate >= sixMonthsAgo;
+  };
+
   const [operationLogs, setOperationLogs] = useState(() => {
     const savedLogs = localStorage.getItem('operationLogs');
-    return savedLogs ? JSON.parse(savedLogs) : [];
+    const allLogs = savedLogs ? JSON.parse(savedLogs) : [];
+    // 只保留半年内的记录
+    return allLogs.filter(log => isWithinSixMonths(log.timestamp));
   });
-  const [totalProfit, setTotalProfit] = useState(() => {
+  
+  // 添加详情Modal的状态
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedStockDetails, setSelectedStockDetails] = useState(null);
+  const [purchaseRecords, setPurchaseRecords] = useState([]);
+  const [profitStats, setProfitStats] = useState({});
+const [monthlyProfitStats, setMonthlyProfitStats] = useState({});
+const [selectedMonth, setSelectedMonth] = useState('');
+
+const calculateProfitStats = () => {
+  const stats = {};
+  const monthlyStats = {};
+
+  operationLogs.forEach(log => {
+    if (log.type === '卖出股票' && log.profit) {
+      // 累计统计
+      const key = log.content.match(/(.+?)\((.+?)\)/);
+      if (key) {
+        const symbol = key[2];
+        const stockName = key[1];
+        
+        // 累计统计
+        stats[symbol] = stats[symbol] || { symbol, name: stockName, totalProfit: 0 };
+        stats[symbol].totalProfit += log.profit;
+
+        // 月度统计
+        const date = new Date(log.timestamp);
+        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+        const monthlyKey = `${symbol}-${monthKey}`;
+        
+        monthlyStats[monthlyKey] = monthlyStats[monthlyKey] || {
+          symbol,
+          month: monthKey,
+          profit: 0
+        };
+        monthlyStats[monthlyKey].profit += log.profit;
+      }
+    }
+  });
+
+  setProfitStats(stats);
+  setMonthlyProfitStats(monthlyStats);
+};
+
+useEffect(() => {
+  calculateProfitStats();
+}, [operationLogs]);
+
+const [totalProfit, setTotalProfit] = useState(() => {
     const savedProfit = localStorage.getItem('totalProfit');
     return savedProfit ? parseFloat(savedProfit) : 0;
   });
@@ -31,6 +89,14 @@ function App() {
   const [selectedStock, setSelectedStock] = useState(null);
   const [addPurchaseForm] = Form.useForm();
   const [selectedStockForStrategy, setSelectedStockForStrategy] = useState(null);
+  // 添加已删除记录的状态
+  const [deletedRecords, setDeletedRecords] = useState(() => {
+    const savedDeletedRecords = localStorage.getItem('deletedRecords');
+    return savedDeletedRecords ? JSON.parse(savedDeletedRecords) : [];
+  });
+  // 添加删除确认对话框的状态
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState(null);
 
   // 策略计算函数
   const calculateStrategy = () => {
@@ -65,13 +131,20 @@ function App() {
 
   // 保存操作记录到本地存储
   useEffect(() => {
-    localStorage.setItem('operationLogs', JSON.stringify(operationLogs));
+    // 保存前过滤掉超过半年的记录
+    const recentLogs = operationLogs.filter(log => isWithinSixMonths(log.timestamp));
+    localStorage.setItem('operationLogs', JSON.stringify(recentLogs));
   }, [operationLogs]);
 
   // 保存总盈利到本地存储
   useEffect(() => {
     localStorage.setItem('totalProfit', totalProfit.toString());
   }, [totalProfit]);
+  
+  // 保存已删除记录到本地存储
+  useEffect(() => {
+    localStorage.setItem('deletedRecords', JSON.stringify(deletedRecords));
+  }, [deletedRecords]);
 
   // 添加操作记录
   const addOperationLog = (type, content, profit = null) => {
@@ -82,7 +155,9 @@ function App() {
       timestamp: new Date().toLocaleString(),
       profit
     };
-    setOperationLogs([newLog, ...operationLogs]);
+    // 添加新记录的同时，过滤掉超过半年的旧记录
+    const updatedLogs = [newLog, ...operationLogs].filter(log => isWithinSixMonths(log.timestamp));
+    setOperationLogs(updatedLogs);
   };
 
   // 更新总资产
@@ -125,6 +200,99 @@ function App() {
       sellPrice: stock.costPrice
     });
   };
+  
+  // 打开详情对话框
+  const handleDetailsClick = (stock) => {
+    setSelectedStockDetails(stock);
+    
+    // 从操作日志中筛选出该股票的所有买入记录
+    const records = operationLogs.filter(log => {
+      return (log.type === '新增股票' || log.type === '追加买入') && 
+             log.content.includes(`${stock.name}(${stock.symbol})`);
+    }).map(log => {
+      // 解析日志内容，提取数量和价格信息
+      let quantity = 0;
+      let price = 0;
+      let recordId = log.key;
+      
+      if (log.type === '新增股票') {
+        const match = log.content.match(/新增 .+?\(.+?\) (\d+)股，单价 \$(\d+\.\d+)/);
+        if (match) {
+          quantity = parseInt(match[1]);
+          price = parseFloat(match[2]);
+        }
+      } else if (log.type === '追加买入') {
+        const match = log.content.match(/追加(\d+)股，单价 \$(\d+\.\d+)/);
+        if (match) {
+          quantity = parseInt(match[1]);
+          price = parseFloat(match[2]);
+        }
+      }
+      
+      return {
+        key: recordId,
+        type: log.type,
+        quantity,
+        price,
+        timestamp: log.timestamp,
+        stock: stock
+      };
+    });
+    
+    // 过滤掉已删除的记录
+    const filteredRecords = records.filter(record => 
+      !deletedRecords.includes(record.key)
+    );
+    
+    setPurchaseRecords(filteredRecords);
+    setDetailsModalVisible(true);
+  };
+  
+  // 从详情弹窗中卖出股票
+  const handleSellFromDetails = (record) => {
+    // 保存当前记录信息，以便在卖出时使用
+    const originalRecord = {
+      ...record,
+      originalPrice: record.price, // 保存原始买入价格
+      isFromDetails: true // 标记是从详情页面卖出
+    };
+    setSelectedStock(originalRecord);
+    setSellModalVisible(true);
+    sellForm.setFieldsValue({
+      quantity: record.quantity,
+      sellPrice: record.price
+    });
+    setDetailsModalVisible(false);
+  };
+  
+  // 处理删除记录按钮点击
+  const handleDeleteRecordClick = (record) => {
+    setRecordToDelete(record);
+    setDeleteConfirmVisible(true);
+  };
+  
+  // 确认删除记录
+  const handleConfirmDelete = () => {
+    if (recordToDelete) {
+      // 将记录ID添加到已删除记录列表中
+      setDeletedRecords([...deletedRecords, recordToDelete.key]);
+      
+      // 从当前显示的记录中移除该记录
+      setPurchaseRecords(purchaseRecords.filter(record => record.key !== recordToDelete.key));
+      
+      // 添加删除操作记录
+      addOperationLog(
+        '删除记录', 
+        `删除 ${recordToDelete.stock.name}(${recordToDelete.stock.symbol}) 的一条${recordToDelete.type === '新增股票' ? '首次买入' : '追加买入'}记录，买入数量: ${recordToDelete.quantity}股，买入价格: $${recordToDelete.price.toFixed(2)}`
+      );
+      
+      message.success('记录已删除');
+    }
+    
+    // 关闭确认对话框
+    setDeleteConfirmVisible(false);
+    setRecordToDelete(null);
+  };
 
   // 处理卖出股票
   const handleSell = () => {
@@ -132,30 +300,65 @@ function App() {
       const { quantity: sellQuantity, sellPrice } = values;
       const stock = selectedStock;
       
-      if (sellQuantity > stock.quantity) {
+      // 检查是否是从详情页面卖出（有isFromDetails属性）
+      const isFromDetails = stock.isFromDetails === true;
+      
+      // 获取实际的股票对象（如果是从详情页面卖出，则需要获取真实的股票对象）
+      const actualStock = isFromDetails ? stock.stock : stock;
+      
+      if (sellQuantity > actualStock.quantity) {
         message.error('卖出数量不能超过持有数量');
         return;
       }
 
       // 计算本次卖出的盈利
       const sellValue = sellQuantity * sellPrice;
-      const costValue = sellQuantity * stock.costPrice;
+      
+      // 如果是从详情页面卖出，使用原始买入价格计算成本
+      const costPrice = isFromDetails ? stock.originalPrice : actualStock.costPrice;
+      const costValue = sellQuantity * costPrice;
       const profit = sellValue - costValue;
 
       // 更新总盈利
       setTotalProfit(prevProfit => prevProfit + profit);
 
-      if (sellQuantity === stock.quantity) {
+      // 如果是从详情页面卖出，将该记录添加到已删除记录中
+      if (isFromDetails) {
+        // 将记录ID添加到已删除记录列表中
+        setDeletedRecords([...deletedRecords, stock.key]);
+        
+        // 从当前显示的记录中移除该记录
+        setPurchaseRecords(purchaseRecords.filter(record => record.key !== stock.key));
+      }
+
+      // 更新股票列表
+      if (sellQuantity === actualStock.quantity) {
         // 全部卖出
-        setStocks(stocks.filter(s => s.key !== stock.key));
+        setStocks(stocks.filter(s => s.key !== actualStock.key));
       } else {
-        // 部分卖出
+        // 部分卖出，需要重新计算成本价
         setStocks(stocks.map(s => {
-          if (s.key === stock.key) {
-            return {
-              ...s,
-              quantity: s.quantity - sellQuantity
-            };
+          if (s.key === actualStock.key) {
+            // 如果是从详情页面卖出，需要重新计算剩余股票的平均成本价
+            if (isFromDetails) {
+              // 计算总成本 = 当前总成本 - 卖出部分的成本
+              const totalCost = s.quantity * s.costPrice - sellQuantity * costPrice;
+              const remainingQuantity = s.quantity - sellQuantity;
+              // 计算新的平均成本价
+              const newCostPrice = remainingQuantity > 0 ? totalCost / remainingQuantity : 0;
+              
+              return {
+                ...s,
+                quantity: remainingQuantity,
+                costPrice: newCostPrice
+              };
+            } else {
+              // 普通卖出，只减少数量
+              return {
+                ...s,
+                quantity: s.quantity - sellQuantity
+              };
+            }
           }
           return s;
         }));
@@ -164,9 +367,14 @@ function App() {
       setSellModalVisible(false);
       sellForm.resetFields();
       message.success('股票卖出成功');
+      
+      // 添加操作日志
+      const stockName = isFromDetails ? actualStock.name : stock.name;
+      const stockSymbol = isFromDetails ? actualStock.symbol : stock.symbol;
+      
       addOperationLog(
         '卖出股票', 
-        `卖出 ${stock.name}(${stock.symbol}) ${sellQuantity}股，单价 $${sellPrice.toFixed(2)}，总收入 $${sellValue.toFixed(2)}`,
+        `卖出 ${stockName}(${stockSymbol}) ${sellQuantity}股，单价 $${sellPrice.toFixed(2)}，总收入 $${sellValue.toFixed(2)}`,
         profit
       );
     });
@@ -177,7 +385,7 @@ function App() {
     setSelectedStock(stock);
     setAddPurchaseModalVisible(true);
     addPurchaseForm.setFieldsValue({
-      quantity: 100,
+      quantity: 1,
       costPrice: stock.costPrice
     });
   };
@@ -282,17 +490,17 @@ function App() {
         <Space>
           <Button
             type="primary"
-            icon={<ShoppingOutlined />}
-            onClick={() => handleSellClick(record)}
-          >
-            卖出
-          </Button>
-          <Button
-            type="primary"
             icon={<PlusOutlined />}
             onClick={() => handleAddPurchaseClick(record)}
           >
             追加
+          </Button>
+          <Button
+            type="primary"
+            icon={<InfoCircleOutlined />}
+            onClick={() => handleDetailsClick(record)}
+          >
+            详情
           </Button>
         </Space>
       ),
@@ -480,6 +688,7 @@ function App() {
       {/* 策略结果表格 */}
       <Table
         dataSource={strategyResults}
+        rowKey="key"
         columns={[
           { title: '股票名称', dataIndex: 'name' },
           {
@@ -517,6 +726,60 @@ function App() {
           columns={logColumns} 
           pagination={{ pageSize: 5 }}
           locale={{ emptyText: '暂无操作记录' }}
+          rowKey="key"
+        />
+      </Card>
+
+      {/* 盈利统计模块 */}
+      <Card title="股票盈利统计" className="table-card">
+        <Table
+          title={() => '累计盈利统计'}
+          dataSource={Object.values(profitStats)}
+          rowKey="symbol"
+          columns={[
+            { title: '股票代码', dataIndex: 'symbol' },
+            {
+              title: '累计盈利',
+              dataIndex: 'totalProfit',
+              render: value => (
+                <span style={{ color: value >= 0 ? '#3f8600' : '#cf1322' }}>
+                  ${value.toFixed(2)}
+                </span>
+              )
+            }
+          ]}
+          pagination={false}
+          style={{ marginBottom: 24 }}
+        />
+
+        <div style={{ marginBottom: 16 }}>
+          <Select
+            placeholder="选择月份"
+            style={{ width: 200 }}
+            value={selectedMonth}
+            onChange={setSelectedMonth}
+            options={[
+              ...new Set(Object.values(monthlyProfitStats).map(m => m.month))
+            ].sort().map(month => ({ value: month, label: month }))}
+          />
+        </div>
+        <Table
+          title={() => '月度盈利统计'}
+          dataSource={Object.values(monthlyProfitStats).filter(m => !selectedMonth || m.month === selectedMonth)}
+          rowKey={record => `${record.symbol}-${record.month}`}
+          columns={[
+            { title: '股票代码', dataIndex: 'symbol' },
+            {
+              title: '盈利金额',
+              dataIndex: 'profit',
+              render: value => (
+                <span style={{ color: value >= 0 ? '#3f8600' : '#cf1322' }}>
+                  ${value.toFixed(2)}
+                </span>
+              )
+            }
+          ]}
+          pagination={false}
         />
       </Card>
 
@@ -545,6 +808,7 @@ function App() {
               min={1}
               style={{ width: '100%' }}
               placeholder="请输入卖出数量"
+              disabled={selectedStock?.isFromDetails} // 如果是从详情页面卖出，则禁用数量输入
             />
           </Form.Item>
           <Form.Item
@@ -600,6 +864,75 @@ function App() {
 
 
 
+      {/* 股票详情对话框 */}
+      <Modal
+        title={selectedStockDetails ? `${selectedStockDetails.name}(${selectedStockDetails.symbol}) 买入记录` : '买入记录'}
+        open={detailsModalVisible}
+        onCancel={() => setDetailsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailsModalVisible(false)}>
+            关闭
+          </Button>
+        ]}
+        width={700}
+      >
+        <List
+          dataSource={purchaseRecords}
+          locale={{ emptyText: '暂无买入记录' }}
+          renderItem={item => (
+            <List.Item
+              key={item.key}
+              actions={[
+                <Button 
+                  type="primary" 
+                  icon={<ShoppingOutlined />}
+                  onClick={() => handleSellFromDetails(item)}
+                >
+                  卖出
+                </Button>,
+                <Button 
+                  type="primary" 
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDeleteRecordClick(item)}
+                >
+                  删除
+                </Button>
+              ]}
+            >
+              <List.Item.Meta
+                title={`${item.type === '新增股票' ? '首次买入' : '追加买入'} - ${item.timestamp}`}
+                description={`买入数量: ${item.quantity}股, 买入价格: $${item.price.toFixed(2)}, 总投入: $${(item.quantity * item.price).toFixed(2)}`}
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
+      
+      {/* 删除确认对话框 */}
+      <Modal
+        title="确认删除"
+        open={deleteConfirmVisible}
+        onOk={handleConfirmDelete}
+        onCancel={() => {
+          setDeleteConfirmVisible(false);
+          setRecordToDelete(null);
+        }}
+        okText="确认删除"
+        cancelText="取消"
+      >
+        <p>确定要删除这条记录吗？删除后将不会在详情页面显示，但在操作记录中仍会保留。</p>
+        {recordToDelete && (
+          <div>
+            <p><strong>记录信息：</strong></p>
+            <p>类型：{recordToDelete.type === '新增股票' ? '首次买入' : '追加买入'}</p>
+            <p>时间：{recordToDelete.timestamp}</p>
+            <p>数量：{recordToDelete.quantity}股</p>
+            <p>价格：${recordToDelete.price.toFixed(2)}</p>
+            <p>总投入：${(recordToDelete.quantity * recordToDelete.price).toFixed(2)}</p>
+          </div>
+        )}
+      </Modal>
       
     </div>
   )
